@@ -11,8 +11,12 @@ LLM calls bash tool
   Whitelisted? ──yes──▶ Allow instantly
        │ no
        ▼
+  Previously overridden? ──yes──▶ Allow + notify
+       │ no
+       ▼
   Fire 5 parallel Haiku 4.5 voters
   "Is this command safe? YES or NO"
+  (with <previous_decisions> context)
        │
        ▼
   ┌────────────────────────────┐
@@ -22,6 +26,7 @@ LLM calls bash tool
   └────────────────────────────┘
   † User can override. On-demand explanation
     via main model with full conversation context.
+    Overrides are remembered for future reviews.
 ```
 
 ## Features
@@ -40,6 +45,9 @@ LLM calls bash tool
   - On-demand explanation (fetched in background)
   - `y` to allow, `n`/`esc` to block
 - **Override warning** — every override is surfaced as a notification
+- **Override memory** — overrides are persisted per-session:
+  - Exact same command → auto-allowed with notification (skips review entirely)
+  - Past overrides provided as `<previous_decisions>` context to voters so they learn user preferences
 - **Denial reason** — returned to the LLM so it can adjust
 
 ### Explainer
@@ -110,7 +118,8 @@ Debug state persists across `/reload`.
 ## Non-interactive Mode
 
 In print mode (`-p`) or JSON mode, the guard:
-- Blocks anything that isn't unanimous YES
+- Auto-allows previously overridden commands (from earlier interactive sessions)
+- Blocks anything else that isn't unanimous YES
 - Returns a descriptive denial reason to the LLM
 - No UI prompts (no user to ask)
 
@@ -133,3 +142,4 @@ Voter model candidates are defined in `resolveVoterModels()`. Models are resolve
 - **Not exposed as a tool** — the LLM cannot disable its own sandboxing
 - **User-only control** — only `/guard` commands can toggle the guard
 - **Override audit trail** — every override is logged as a warning notification
+- **Override persistence** — overrides survive `/reload` and session restore via `appendEntry`

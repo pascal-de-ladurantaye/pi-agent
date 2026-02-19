@@ -10,6 +10,10 @@
  *
  * Timeouts and errors count as abstentions (ignored in vote tally).
  * Toggle with `/guard on|off|debug`. Not exposed as a tool — LLM cannot disable it.
+ *
+ * Override memory: when the user overrides a NO/split decision, the command is
+ * recorded. Exact repeat commands are auto-allowed with a notification. Past
+ * overrides are provided as context to voters so they can learn user preferences.
  */
 
 import {
@@ -42,7 +46,9 @@ const EXPLAINER_CONTEXT_MESSAGES = 20;
 
 const VOTER_SYSTEM_PROMPT = `You are a security reviewer. Your only job is to review a single bash command and decide if it is safe.
 
-You will receive a bash command inside <command> tags. Review it and respond with a single word: YES or NO. Do not explain. Do not add any other text.
+You will receive a bash command inside <command> tags. The message may also include <previous_decisions> showing commands the user previously reviewed and explicitly allowed despite security concerns. These decisions represent the user's explicit intent and should carry significant weight in your review. If the command under review is similar in nature, scope, or target to a previously allowed command, you should vote YES. Only vote NO if the command is substantially more dangerous than what the user has already approved — for example, targeting a different sensitive path, adding network exfiltration, or escalating scope far beyond prior approvals.
+
+Review the command in <command> tags and respond with a single word: YES or NO. Do not explain. Do not add any other text.
 
 YES means: the command is safe to run on a developer's machine.
 NO means: the command is unsafe or risky.
@@ -181,9 +187,17 @@ interface VoterModel {
 	label: string;
 }
 
+interface VoteOverride {
+	command: string;
+	outcome: "split" | "no";
+	voteBreakdown: string;
+	timestamp: number;
+}
+
 // ── Voter model resolution ───────────────────────────────────────────────────
 
 let cachedVoterModels: VoterModel[] | null = null;
+let overrideHistory: VoteOverride[] = [];
 
 async function resolveVoterModels(ctx: ExtensionContext): Promise<VoterModel[]> {
 	if (cachedVoterModels) return cachedVoterModels;
@@ -213,9 +227,29 @@ function distributeVoters(voterModels: VoterModel[]): VoterModel[] {
 
 // ── Single vote ──────────────────────────────────────────────────────────────
 
+function buildVoterMessage(command: string, overrides: ReadonlyArray<VoteOverride>): string {
+	const parts: string[] = [];
+	if (overrides.length > 0) {
+		parts.push("<previous_decisions>");
+		for (const o of overrides) {
+			parts.push("<decision>");
+			parts.push(`<command>${o.command}</command>`);
+			parts.push(`<vote_outcome>${o.outcome === "no" ? "unanimous NO" : "split"} (${o.voteBreakdown})</vote_outcome>`);
+			parts.push(`<user_decision>allowed</user_decision>`);
+			parts.push("</decision>");
+		}
+		parts.push("</previous_decisions>");
+		parts.push("");
+	}
+	parts.push(`<command>${command}</command>`);
+	return parts.join("\n");
+}
+
+
 async function castVote(
 	voter: VoterModel,
 	command: string,
+	overrides: ReadonlyArray<VoteOverride>,
 	parentSignal?: AbortSignal,
 ): Promise<VoterRecord> {
 	const t0 = performance.now();
@@ -232,7 +266,7 @@ async function castVote(
 				systemPrompt: VOTER_SYSTEM_PROMPT,
 				messages: [{
 					role: "user" as const,
-					content: [{ type: "text" as const, text: `<command>${command}</command>` }],
+					content: [{ type: "text" as const, text: buildVoterMessage(command, overrides) }],
 					timestamp: Date.now(),
 				}],
 			},
@@ -379,11 +413,12 @@ async function runVoteTracking(
 	ctx: ExtensionContext,
 	command: string,
 	voters: VoterModel[],
+	overrides: ReadonlyArray<VoteOverride>,
 ): Promise<VoteResult> {
 	/** Headless: no abort signal (each voter has its own timeout). */
 	if (!ctx.hasUI) {
 		const t0 = performance.now();
-		const records = await Promise.all(voters.map((voter) => castVote(voter, command)));
+		const records = await Promise.all(voters.map((voter) => castVote(voter, command, overrides)));
 		return computeVoteResult(records, false, performance.now() - t0);
 	}
 
@@ -425,7 +460,7 @@ async function runVoteTracking(
 		let remaining = voters.length;
 		for (let i = 0; i < voters.length; i++) {
 			const idx = i;
-			castVote(voters[idx], command, abortController.signal).then((record) => {
+			castVote(voters[idx], command, overrides, abortController.signal).then((record) => {
 				if (finished) return;
 				records[idx] = record;
 				remaining--;
@@ -644,8 +679,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		// Restore last persisted state (reverse scan, break on first match)
 		const entries = ctx.sessionManager.getEntries();
+
+		// Restore last persisted guard state (reverse scan, break on first match)
 		for (let i = entries.length - 1; i >= 0; i--) {
 			const entry = entries[i];
 			if (entry.type === "custom" && entry.customType === "bash-guard-state") {
@@ -655,6 +691,15 @@ export default function (pi: ExtensionAPI) {
 				break;
 			}
 		}
+
+		// Restore override history (forward scan, collect all)
+		overrideHistory = [];
+		for (const entry of entries) {
+			if (entry.type === "custom" && entry.customType === "bash-guard-override") {
+				overrideHistory.push(entry.data as VoteOverride);
+			}
+		}
+
 		// Invalidate voter model cache (new session may have different keys)
 		cachedVoterModels = null;
 		updateStatus(ctx);
@@ -667,6 +712,14 @@ export default function (pi: ExtensionAPI) {
 
 		const command = event.input.command;
 		if (isWhitelisted(command)) return;
+
+		const previousOverride = overrideHistory.find((o) => o.command === command);
+		if (previousOverride) {
+			if (ctx.hasUI) {
+				ctx.ui.notify(`✅ Previously allowed (${previousOverride.voteBreakdown}) — skipping review`, "info");
+			}
+			return;
+		}
 
 		const voterModels = await resolveVoterModels(ctx);
 
@@ -683,7 +736,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const voters = distributeVoters(voterModels);
-		const result = await runVoteTracking(ctx, command, voters);
+		const result = await runVoteTracking(ctx, command, voters, overrideHistory);
 
 		// Surface voter errors inline
 		const voterErrors = formatVoterErrors(result.records);
@@ -731,6 +784,14 @@ export default function (pi: ExtensionAPI) {
 		const { allowed, explanation } = await showReviewDialog(ctx, command, result, header, debugEnabled, true);
 
 		if (allowed) {
+			const override: VoteOverride = {
+				command,
+				outcome: result.unanimous === "no" ? "no" : "split",
+				voteBreakdown: `${result.yesCount} YES / ${result.noCount} NO`,
+				timestamp: Date.now(),
+			};
+			overrideHistory.push(override);
+			pi.appendEntry("bash-guard-override", override);
 			ctx.ui.notify(`⚠️ User override — allowed despite ${voteBreakdown}`, "warning");
 			return;
 		}
