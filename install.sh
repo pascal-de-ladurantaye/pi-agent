@@ -17,25 +17,25 @@ fi
 
 installed=0
 
-# ── Symlink global AGENTS.md into each agent profile ──
+# ── Render and install global AGENTS.md into each agent profile ──
 
-GLOBAL_AGENTS="$SCRIPT_DIR/global-agents.md"
-if [[ -f "$GLOBAL_AGENTS" ]]; then
-  echo "Global AGENTS.md: $GLOBAL_AGENTS"
+GLOBAL_AGENTS_TEMPLATE="$SCRIPT_DIR/global-agents.md"
+if [[ -f "$GLOBAL_AGENTS_TEMPLATE" ]]; then
+  echo "Global AGENTS.md template: $GLOBAL_AGENTS_TEMPLATE"
+  RENDERED=$(sed "s|{{REPO_DIR}}|$SCRIPT_DIR|g" "$GLOBAL_AGENTS_TEMPLATE")
+
   for agent_dir in "$PI_DIR"/*/; do
     [[ -d "$agent_dir" ]] || continue
     agent_name="$(basename "$agent_dir")"
     target="${agent_dir}AGENTS.md"
 
+    # Remove old symlinks from previous install versions
     if [[ -L "$target" ]]; then
       rm "$target"
-    elif [[ -e "$target" ]]; then
-      echo "  ⚠️  Skip $agent_name/AGENTS.md — exists and is not a symlink"
-      continue
     fi
 
-    ln -s "$GLOBAL_AGENTS" "$target"
-    echo "  ✅ $agent_name/AGENTS.md → global-agents.md"
+    echo "$RENDERED" > "$target"
+    echo "  ✅ $agent_name/AGENTS.md (rendered from template)"
     ((installed++))
   done
   echo ""

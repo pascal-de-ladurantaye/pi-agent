@@ -3,7 +3,7 @@
 ## Extensions
 
 Custom pi extensions are developed and maintained in:
-`~/src/github.com/pascal-de-ladurantaye/pi-extensions`
+`{{REPO_DIR}}`
 
 When building or modifying extensions, always work in that repository. Run `./install.sh` after adding new extensions to symlink them into all pi agent profiles.
 
