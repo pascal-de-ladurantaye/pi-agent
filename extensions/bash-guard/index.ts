@@ -97,7 +97,9 @@ const SUBSHELL_PATTERN = /\$\(/;
 const REDIRECT_PATTERN = />{1,2}/;
 
 function isWhitelisted(command: string): boolean {
-	const trimmed = command.trim();
+	// Collapse line-continuations and stray newlines into spaces so that
+	// long paths wrapped by the LLM don't trigger the \n guard.
+	const trimmed = command.trim().replace(/\\\n\s*/g, "").replace(/\n\s*/g, " ");
 	if (UNSAFE_SHELL_CHARS.test(trimmed)) return false;
 	if (SUBSHELL_PATTERN.test(trimmed)) return false;
 	if (REDIRECT_PATTERN.test(trimmed)) return false;
