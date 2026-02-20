@@ -1,6 +1,6 @@
-# pi-extensions
+# pi-agent
 
-Custom extensions for [pi](https://github.com/badlogic/pi-mono), the coding agent.
+Customizations for [pi](https://github.com/badlogic/pi-mono), the coding agent.
 
 ## Extensions
 
