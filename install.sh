@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install pi extensions by symlinking into all pi agent config
+# Install pi extensions, themes, skills, and prompt templates by symlinking
 # directories found in ~/.pi/
 #
 # Usage: ./install.sh [--with-agents]
@@ -94,6 +94,130 @@ else
 
       ln -s "$source_dir" "$target"
       echo "  ✅ $agent_name/extensions/$ext → $ext"
+      ((installed++))
+    done
+  done
+fi
+
+# ── Symlink theme files ──
+
+THEME_SRC="$SCRIPT_DIR/themes"
+themes=()
+if [[ -d "$THEME_SRC" ]]; then
+  for file in "$THEME_SRC"/*.json; do
+    [[ -f "$file" ]] || continue
+    themes+=("$(basename "$file")")
+  done
+fi
+
+if [[ ${#themes[@]} -eq 0 ]]; then
+  echo "No themes found (looking for themes/*.json)"
+else
+  echo ""
+  echo "Themes: ${themes[*]}"
+  for agent_dir in "$PI_DIR"/*/; do
+    [[ -d "$agent_dir" ]] || continue
+    agent_name="$(basename "$agent_dir")"
+
+    theme_dir="${agent_dir}themes"
+    mkdir -p "$theme_dir"
+
+    for theme in "${themes[@]}"; do
+      source_file="$THEME_SRC/$theme"
+      target="$theme_dir/$theme"
+
+      if [[ -L "$target" ]]; then
+        rm "$target"
+      elif [[ -e "$target" ]]; then
+        echo "  ⚠️  Skip $agent_name/$theme — exists and is not a symlink"
+        continue
+      fi
+
+      ln -s "$source_file" "$target"
+      echo "  ✅ $agent_name/themes/$theme → $theme"
+      ((installed++))
+    done
+  done
+fi
+
+# ── Symlink skill folders ──
+
+SKILL_SRC="$SCRIPT_DIR/skills"
+skills=()
+if [[ -d "$SKILL_SRC" ]]; then
+  for dir in "$SKILL_SRC"/*/; do
+    if [[ -f "${dir}SKILL.md" ]]; then
+      skills+=("$(basename "$dir")")
+    fi
+  done
+fi
+
+if [[ ${#skills[@]} -eq 0 ]]; then
+  echo "No skills found (looking for skills/*/SKILL.md)"
+else
+  echo ""
+  echo "Skills: ${skills[*]}"
+  for agent_dir in "$PI_DIR"/*/; do
+    [[ -d "$agent_dir" ]] || continue
+    agent_name="$(basename "$agent_dir")"
+
+    skill_dir="${agent_dir}skills"
+    mkdir -p "$skill_dir"
+
+    for skill in "${skills[@]}"; do
+      source_dir="$SKILL_SRC/$skill"
+      target="$skill_dir/$skill"
+
+      if [[ -L "$target" ]]; then
+        rm "$target"
+      elif [[ -e "$target" ]]; then
+        echo "  ⚠️  Skip $agent_name/$skill — exists and is not a symlink"
+        continue
+      fi
+
+      ln -s "$source_dir" "$target"
+      echo "  ✅ $agent_name/skills/$skill → $skill"
+      ((installed++))
+    done
+  done
+fi
+
+# ── Symlink prompt template files ──
+
+PROMPT_SRC="$SCRIPT_DIR/prompts"
+prompts=()
+if [[ -d "$PROMPT_SRC" ]]; then
+  for file in "$PROMPT_SRC"/*.md; do
+    [[ -f "$file" ]] || continue
+    prompts+=("$(basename "$file")")
+  done
+fi
+
+if [[ ${#prompts[@]} -eq 0 ]]; then
+  echo "No prompt templates found (looking for prompts/*.md)"
+else
+  echo ""
+  echo "Prompts: ${prompts[*]}"
+  for agent_dir in "$PI_DIR"/*/; do
+    [[ -d "$agent_dir" ]] || continue
+    agent_name="$(basename "$agent_dir")"
+
+    prompt_dir="${agent_dir}prompts"
+    mkdir -p "$prompt_dir"
+
+    for prompt in "${prompts[@]}"; do
+      source_file="$PROMPT_SRC/$prompt"
+      target="$prompt_dir/$prompt"
+
+      if [[ -L "$target" ]]; then
+        rm "$target"
+      elif [[ -e "$target" ]]; then
+        echo "  ⚠️  Skip $agent_name/$prompt — exists and is not a symlink"
+        continue
+      fi
+
+      ln -s "$source_file" "$target"
+      echo "  ✅ $agent_name/prompts/$prompt → $prompt"
       ((installed++))
     done
   done
