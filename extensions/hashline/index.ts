@@ -639,23 +639,27 @@ function parseHashlineEditItem(edit: HashlineEditItem): ParsedEdit {
 	if ("replace_lines" in edit) {
 		const start = parseLineRef(edit.replace_lines.start_anchor);
 		const end = parseLineRef(edit.replace_lines.end_anchor);
+		// Strip a single trailing newline — models naturally terminate new_text
+		// with \n but in a range replacement this creates a spurious blank line.
+		let raw = edit.replace_lines.new_text;
+		if (raw.endsWith("\n")) raw = raw.slice(0, -1);
 		return {
 			spec:
 				start.line === end.line
 					? { kind: "single", ref: start }
 					: { kind: "range", start, end },
-			dstLines: stripNewLinePrefixes(splitDst(edit.replace_lines.new_text)),
+			dstLines: stripNewLinePrefixes(splitDst(raw)),
 		};
 	}
 	if ("insert_after" in edit) {
+		const text = edit.insert_after.text ?? "";
 		return {
 			spec: {
 				kind: "insertAfter",
 				after: parseLineRef(edit.insert_after.anchor),
 			},
-			dstLines: stripNewLinePrefixes(
-				splitDst(edit.insert_after.text ?? ""),
-			),
+			// Empty text means "insert one blank line"
+			dstLines: text === "" ? [""] : stripNewLinePrefixes(splitDst(text)),
 		};
 	}
 	throw new Error("replace edits are applied separately");
@@ -1075,13 +1079,14 @@ const EDIT_DESC = `Surgically edit files with hash-verified line references (anc
 - path: File path
 - edits: Array of operations:
   - { set_line: { anchor, new_text } }              // Replace or delete a single line
-  - { replace_lines: { start_anchor, end_anchor, new_text } } // Replace a range
-  - { insert_after: { anchor, text } }              // Insert after anchor
+  - { replace_lines: { start_anchor, end_anchor, new_text } } // Replace a range (inclusive)
+  - { insert_after: { anchor, text } }              // Insert new lines after anchor
   - { replace: { old_text, new_text, all? } }       // Global string replace (fallback)
 
 Rules:
 - Anchors (\`LINE:HASH\`) must be copied exactly from \`read\` output.
-- \`new_text\` is plain content (no hashes, no diff \`+\` markers).
+- \`new_text\` is plain content (no hashes, no diff \`+\` markers). Do not add a trailing newline.
+- \`replace_lines\` replaces the ENTIRE range [start, end] inclusive. Any line in the range not reproduced in \`new_text\` is deleted. To add lines without removing existing ones, prefer \`insert_after\`.
 - If a hash mismatch occurs (indicated by \`>>>\`), re-read the file to sync.
 - Operations are validated and applied bottom-up atomically.`;
 
