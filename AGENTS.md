@@ -103,6 +103,8 @@ When building or modifying any of the above, always read the corresponding pi do
 
 - **bash-guard** — Adversarial security review for bash commands using parallel LLM voters
 - **hashline** — Content-anchored line editing — overrides read/grep/edit with `LINE:HASH` references
+- **session-memory** — Converts session JSONL to Obsidian-friendly markdown vault with callouts, indexes, canvas, and MOC
+- **session-namer** — Auto-names sessions using Claude Haiku on the first 3 turns; `/session-namer name` to force rename
 - **snapshot** — Shadow-git filesystem checkpoints at each turn; offers file restore on `/fork`
 
 ## Session Log Analysis
