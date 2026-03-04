@@ -9,7 +9,7 @@
  *   /session-memory debug     — toggle debug notifications
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { loadConfig, interactiveSetup, getSessionsDir } from "./lib/config";
@@ -92,6 +92,7 @@ export default function (pi: ExtensionAPI) {
 		if (!config) return;
 		const sessionFile = ctx.sessionManager.getSessionFile();
 		if (!sessionFile) return;
+		if (!existsSync(sessionFile)) return;
 
 		try {
 			const result = convertSession(sessionFile, config);
