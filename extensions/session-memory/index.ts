@@ -96,7 +96,7 @@ export default function (pi: ExtensionAPI) {
 
 		try {
 			const result = convertSession(sessionFile, config);
-			if (result.isNewSession) generateMOC(config);
+			if (result.isNewSession || result.written > 0) generateMOC(config);
 			if (debug && result.written > 0) {
 				ctx.ui.notify(
 					`📝 ${result.sessionDir}: ${result.written} written, ${result.skipped} skipped`,
@@ -132,20 +132,18 @@ export default function (pi: ExtensionAPI) {
 		await tick();
 		let total = 0;
 		let errors = 0;
-		let hasNew = false;
 
 		for (const file of jsonlFiles) {
 			try {
 				const result = convertSession(file, config);
 				total += result.written;
-				if (result.isNewSession) hasNew = true;
 			} catch (err) {
 				errors++;
 				console.error(`[session-memory] backfill error for ${file}:`, err);
 			}
 		}
 
-		if (hasNew) generateMOC(config);
+		generateMOC(config);
 
 		ctx.ui.setStatus("session-memory", "");
 

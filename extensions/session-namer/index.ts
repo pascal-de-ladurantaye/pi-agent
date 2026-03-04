@@ -6,10 +6,11 @@
  *
  * Commands:
  *   /session-namer name  — force (re)name the current session
+ *   /session-namer retitle-all — backfill names for all unnamed sessions
  */
 
 import { complete } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@mariozechner/pi-coding-agent";
 
 const PROVIDER = "anthropic";
 const MODEL_ID = "claude-haiku-4-5";
@@ -46,7 +47,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("session-namer", {
-		description: "Session namer (name)",
+		description: "Session namer (name | retitle-all)",
 		handler: async (args, ctx) => {
 			const subcommand = args?.trim();
 			if (subcommand === "name") {
@@ -56,30 +57,93 @@ export default function (pi: ExtensionAPI) {
 				} else {
 					ctx.ui.notify("Failed to generate name", "warning");
 				}
+			} else if (subcommand === "retitle-all") {
+				await retitleAll(ctx);
 			} else {
-				ctx.ui.notify("Usage: /session-namer name", "info");
+				ctx.ui.notify("Usage: /session-namer name | retitle-all", "info");
 			}
 		},
 	});
 
+	async function retitleAll(ctx: ExtensionContext) {
+		ctx.ui.notify("Scanning sessions...", "info");
+
+		let sessions;
+		try {
+			sessions = await SessionManager.listAll();
+		} catch (err) {
+			ctx.ui.notify(`Failed to list sessions: ${err}`, "error");
+			return;
+		}
+
+		const unnamed = sessions.filter((s) => !s.name);
+		if (unnamed.length === 0) {
+			ctx.ui.notify("All sessions already have names!", "success");
+			return;
+		}
+
+		const proceed = await ctx.ui.confirm(
+			`Backfill ${unnamed.length} unnamed sessions?`,
+			`Found ${sessions.length} total sessions, ${unnamed.length} without names. This will use ~${unnamed.length} LLM calls (Claude Haiku).`,
+		);
+		if (!proceed) return;
+
+		let named = 0;
+		let failed = 0;
+
+		for (const session of unnamed) {
+			try {
+				const sm = SessionManager.open(session.path);
+				const branch = sm.getBranch();
+				const context = buildContext(branch);
+				if (!context.trim()) {
+					failed++;
+					continue;
+				}
+
+				const name = await generateName(ctx, context);
+				if (name) {
+					sm.appendSessionInfo(name);
+					named++;
+				} else {
+					failed++;
+				}
+
+				// Rate limit: small delay between calls
+				await new Promise((r) => setTimeout(r, 200));
+			} catch {
+				failed++;
+			}
+		}
+
+		ctx.ui.notify(
+			`Done! Named ${named} sessions${failed > 0 ? `, ${failed} failed/skipped` : ""}`,
+			named > 0 ? "success" : "warning",
+		);
+	}
+
 	async function nameSession(ctx: ExtensionContext, verbose = false): Promise<string | null> {
-		const model = ctx.modelRegistry.find(PROVIDER, MODEL_ID);
-		if (!model) {
-			if (verbose) ctx.ui.notify(`Model not found: ${PROVIDER}/${MODEL_ID}`, "error");
-			return null;
-		}
-
-		const apiKey = await ctx.modelRegistry.getApiKey(model);
-		if (!apiKey) {
-			if (verbose) ctx.ui.notify(`No API key for ${PROVIDER}/${MODEL_ID}`, "error");
-			return null;
-		}
-
 		const context = buildContext(ctx.sessionManager.getBranch());
 		if (!context.trim()) {
 			if (verbose) ctx.ui.notify("Empty context — no messages to summarize", "error");
 			return null;
 		}
+
+		const name = await generateName(ctx, context);
+		if (name) {
+			pi.setSessionName(name);
+			return name;
+		}
+		if (verbose) ctx.ui.notify("Failed to generate name", "warning");
+		return null;
+	}
+
+	async function generateName(ctx: ExtensionContext, context: string): Promise<string | null> {
+		const model = ctx.modelRegistry.find(PROVIDER, MODEL_ID);
+		if (!model) return null;
+
+		const apiKey = await ctx.modelRegistry.getApiKey(model);
+		if (!apiKey) return null;
 
 		try {
 			const response = await complete(
@@ -107,12 +171,10 @@ export default function (pi: ExtensionAPI) {
 				.replace(/^#+\s*/, "");
 
 			if (name && name.length > 0 && name.length < 100) {
-				pi.setSessionName(name);
 				return name;
 			}
-			if (verbose) ctx.ui.notify(`Bad name from model: "${name}"`, "error");
-		} catch (err) {
-			if (verbose) ctx.ui.notify(`LLM error: ${err}`, "error");
+		} catch {
+			// LLM error — return null
 		}
 
 		return null;

@@ -14,6 +14,7 @@ The name appears in the `/resume` session selector instead of the first message,
 ## Commands
 
 - `/session-namer name` — force (re)name the current session
+- `/session-namer retitle-all` — backfill names for all unnamed sessions across all projects (with confirmation prompt)
 
 ## System prompt
 

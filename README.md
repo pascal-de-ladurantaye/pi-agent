@@ -7,7 +7,10 @@ Customizations for [pi](https://github.com/badlogic/pi-mono), the coding agent.
 | Extension | Description |
 |---|---|
 | [bash-guard](./extensions/bash-guard/) | Adversarial security review for bash commands — parallel LLM voters assess safety before execution |
+| [cross-agent-discovery](./extensions/cross-agent-discovery/) | Discovers project-local Claude slash commands (`.claude/commands/*.md`) and registers them as pi prompt templates |
 | [hashline](./extensions/hashline/) | Content-anchored line editing — overrides read/grep/edit with `LINE:HASH` references for precise, drift-resistant edits |
+| [session-memory](./extensions/session-memory/) | Converts session JSONL to Obsidian-friendly markdown vault with callouts, indexes, canvas, and MOC |
+| [session-namer](./extensions/session-namer/) | Auto-names sessions using Claude Haiku on the first 3 turns |
 | [snapshot](./extensions/snapshot/) | Shadow-git filesystem checkpoints at each turn; offers file restore on `/fork` |
 
 ## Skills
@@ -39,7 +42,7 @@ Then run `/reload` in pi to pick up the changes.
 Remove the symlinks from your pi config directories:
 
 ```bash
-rm ~/.pi/*/extensions/{bash-guard,hashline,snapshot}
+rm ~/.pi/*/extensions/{bash-guard,cross-agent-discovery,hashline,session-memory,session-namer,snapshot}
 ```
 
 
