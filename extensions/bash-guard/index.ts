@@ -409,6 +409,17 @@ function buildDialogContainer(
 
 // ── Vote tracking UI ─────────────────────────────────────────────────────────
 
+/** Run votes without UI (headless, RPC, or fallback). */
+async function runVotesHeadless(
+	voters: VoterModel[],
+	command: string,
+	overrides: ReadonlyArray<VoteOverride>,
+): Promise<VoteResult> {
+	const t0 = performance.now();
+	const records = await Promise.all(voters.map((voter) => castVote(voter, command, overrides)));
+	return computeVoteResult(records, false, performance.now() - t0);
+}
+
 async function runVoteTracking(
 	ctx: ExtensionContext,
 	command: string,
@@ -417,12 +428,11 @@ async function runVoteTracking(
 ): Promise<VoteResult> {
 	/** Headless: no abort signal (each voter has its own timeout). */
 	if (!ctx.hasUI) {
-		const t0 = performance.now();
-		const records = await Promise.all(voters.map((voter) => castVote(voter, command, overrides)));
-		return computeVoteResult(records, false, performance.now() - t0);
+		return runVotesHeadless(voters, command, overrides);
 	}
 
-	return ctx.ui.custom<VoteResult>((tui, theme, _kb, done) => {
+	// ctx.ui.custom() returns undefined in RPC mode — fall back to headless
+	const result = await ctx.ui.custom<VoteResult>((tui, theme, _kb, done) => {
 		const records: VoterRecord[] = voters.map((v) => ({
 			label: v.label, status: "pending" as VoteStatus, durationMs: 0,
 		}));
@@ -481,6 +491,8 @@ async function runVoteTracking(
 			},
 		};
 	});
+
+	return result ?? await runVotesHeadless(voters, command, overrides);
 }
 
 // ── Explainer ────────────────────────────────────────────────────────────────
@@ -582,7 +594,8 @@ async function showReviewDialog(
 	debugEnabled: boolean,
 	interactive: boolean,
 ): Promise<{ allowed: boolean; explanation: string }> {
-	return ctx.ui.custom<{ allowed: boolean; explanation: string }>((tui, theme, _kb, done) => {
+	// Try full TUI dialog first
+	const customResult = await ctx.ui.custom<{ allowed: boolean; explanation: string }>((tui, theme, _kb, done) => {
 		const mdTheme = getMarkdownTheme();
 		let explanationText = "";
 		let resolved = false;
@@ -633,6 +646,24 @@ async function showReviewDialog(
 			},
 		};
 	});
+
+	// ctx.ui.custom() returns undefined in RPC mode — fall back to confirm() dialog
+	if (customResult) return customResult;
+
+	if (!interactive) {
+		return { allowed: true, explanation: "" };
+	}
+
+	// ctx.ui.confirm() works in RPC mode via the extension UI sub-protocol
+	const explanation = await getExplanation(ctx, command, result);
+	const voteBreakdown =
+		`${result.yesCount} YES / ${result.noCount} NO` +
+		(result.abstentions > 0 ? ` / ${result.abstentions} abstained` : "");
+	const allowed = await ctx.ui.confirm(
+		header,
+		`$ ${truncateCmd(command, 120)}\n\n${explanation}\n\nVotes: ${voteBreakdown}`,
+	);
+	return { allowed: allowed ?? false, explanation };
 }
 
 // ── Extension entry point ────────────────────────────────────────────────────
