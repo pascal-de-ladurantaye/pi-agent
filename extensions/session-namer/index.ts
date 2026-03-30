@@ -53,7 +53,7 @@ export default function (pi: ExtensionAPI) {
 			if (subcommand === "name") {
 				const name = await nameSession(ctx, true);
 				if (name) {
-					ctx.ui.notify(`Session named: ${name}`, "success");
+					ctx.ui.notify(`Session named: ${name}`, "info");
 				} else {
 					ctx.ui.notify("Failed to generate name", "warning");
 				}
@@ -78,7 +78,7 @@ export default function (pi: ExtensionAPI) {
 
 		const unnamed = sessions.filter((s) => !s.name);
 		if (unnamed.length === 0) {
-			ctx.ui.notify("All sessions already have names!", "success");
+			ctx.ui.notify("All sessions already have names!", "info");
 			return;
 		}
 
@@ -118,7 +118,7 @@ export default function (pi: ExtensionAPI) {
 
 		ctx.ui.notify(
 			`Done! Named ${named} sessions${failed > 0 ? `, ${failed} failed/skipped` : ""}`,
-			named > 0 ? "success" : "warning",
+			named > 0 ? "info" : "warning",
 		);
 	}
 
@@ -142,14 +142,14 @@ export default function (pi: ExtensionAPI) {
 		const model = ctx.modelRegistry.find(PROVIDER, MODEL_ID);
 		if (!model) return null;
 
-		const apiKey = await ctx.modelRegistry.getApiKey(model);
-		if (!apiKey) return null;
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		if (!auth.ok || (!auth.apiKey && !auth.headers)) return null;
 
 		try {
 			const response = await complete(
 				model,
 				{
-					system: SYSTEM_PROMPT,
+					systemPrompt: SYSTEM_PROMPT,
 					messages: [
 						{
 							role: "user" as const,
@@ -158,8 +158,12 @@ export default function (pi: ExtensionAPI) {
 						},
 					],
 				},
-				{ apiKey },
+				{ apiKey: auth.apiKey, headers: auth.headers, signal: ctx.signal },
 			);
+
+			if (response.stopReason === "error" || response.stopReason === "aborted") {
+				return null;
+			}
 
 			const name = response.content
 				.filter((c): c is { type: "text"; text: string } => c.type === "text")

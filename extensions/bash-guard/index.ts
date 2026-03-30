@@ -183,7 +183,8 @@ interface VoteResult {
 
 interface VoterModel {
 	model: Model<any>;
-	apiKey: string;
+	apiKey?: string;
+	headers?: Record<string, string>;
 	label: string;
 }
 
@@ -211,8 +212,10 @@ async function resolveVoterModels(ctx: ExtensionContext): Promise<VoterModel[]> 
 		try {
 			const model = ctx.modelRegistry.find(candidate.provider, candidate.id);
 			if (!model) continue;
-			const apiKey = await ctx.modelRegistry.getApiKey(model);
-			if (apiKey) available.push({ model, apiKey, label: candidate.label });
+			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+			if (auth.ok && (auth.apiKey || auth.headers)) {
+				available.push({ model, apiKey: auth.apiKey, headers: auth.headers, label: candidate.label });
+			}
 		} catch {}
 	}
 	cachedVoterModels = available;
@@ -254,7 +257,11 @@ async function castVote(
 ): Promise<VoterRecord> {
 	const t0 = performance.now();
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), VOTE_TIMEOUT_MS);
+	let timedOut = false;
+	const timer = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, VOTE_TIMEOUT_MS);
 
 	const onParentAbort = () => controller.abort();
 	parentSignal?.addEventListener("abort", onParentAbort, { once: true });
@@ -270,10 +277,19 @@ async function castVote(
 					timestamp: Date.now(),
 				}],
 			},
-			{ apiKey: voter.apiKey, maxTokens: 256, signal: controller.signal },
+			{ apiKey: voter.apiKey, headers: voter.headers, maxTokens: 256, signal: controller.signal },
 		);
 
 		const ms = performance.now() - t0;
+
+		if (response.stopReason === "aborted") {
+			return {
+				label: voter.label,
+				status: timedOut ? "timeout" : "error",
+				durationMs: ms,
+				error: response.errorMessage ?? (timedOut ? `Timed out after ${VOTE_TIMEOUT_MS}ms` : "Request aborted"),
+			};
+		}
 
 		if (response.stopReason === "error") {
 			return { label: voter.label, status: "error", durationMs: ms, error: response.errorMessage ?? "API error" };
@@ -500,7 +516,7 @@ async function runVoteTracking(
 /** Try preferred explainer model, then fall back to ctx.model. Both with reasoning disabled. */
 async function resolveExplainerModel(
 	ctx: ExtensionContext,
-): Promise<{ model: Model<any>; apiKey: string } | null> {
+): Promise<{ model: Model<any>; apiKey?: string; headers?: Record<string, string> } | null> {
 	const candidates: Array<Model<any> | null | undefined> = [
 		(() => { try { return ctx.modelRegistry.find(EXPLAINER_PROVIDER, EXPLAINER_MODEL_ID); } catch { return null; } })(),
 		ctx.model,
@@ -509,8 +525,10 @@ async function resolveExplainerModel(
 	for (const model of candidates) {
 		if (!model) continue;
 		try {
-			const apiKey = await ctx.modelRegistry.getApiKey(model);
-			if (apiKey) return { model: { ...model, reasoning: false }, apiKey };
+			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+			if (auth.ok && (auth.apiKey || auth.headers)) {
+				return { model: { ...model, reasoning: false }, apiKey: auth.apiKey, headers: auth.headers };
+			}
 		} catch {}
 	}
 	return null;
@@ -576,8 +594,11 @@ async function getExplanation(
 		const response = await complete(
 			explainer.model,
 			{ systemPrompt: EXPLAINER_SYSTEM_PROMPT, messages: [userMessage] },
-			{ apiKey: explainer.apiKey, maxTokens: 300 },
+			{ apiKey: explainer.apiKey, headers: explainer.headers, maxTokens: 300, signal: ctx.signal },
 		);
+		if (response.stopReason === "error" || response.stopReason === "aborted") {
+			return "Unable to generate explanation.";
+		}
 		return extractText(response.content, "\n").trim();
 	} catch {
 		return "Unable to generate explanation.";

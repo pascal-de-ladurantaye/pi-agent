@@ -92,7 +92,7 @@ When building or modifying any of the above, always read the corresponding pi do
 - `ctx.ui.setTheme/getAllThemes/getTheme(...)` — theme management
 - `ctx.sessionManager` — read session entries, tree, leaf
 - `ctx.modelRegistry.find(provider, id)` — find models through user's registry
-- `ctx.modelRegistry.getApiKey(model)` — get API keys respecting user's config
+- `ctx.modelRegistry.getApiKeyAndHeaders(model)` — get API keys and request headers respecting the user's config
 - `ctx.compact(...)` — trigger compaction programmatically
 - `ctx.getContextUsage()` — check current token usage
 - `ctx.getSystemPrompt()` — read the effective system prompt
