@@ -18,8 +18,12 @@ Customizations for [pi](https://github.com/badlogic/pi-mono), the coding agent.
 | Skill | Description |
 |---|---|
 | [browser-mcp](./skills/browser-mcp/) | Automates the user's real Chrome browser via the Browser MCP Chrome extension — CLI wrapper + daemon that bridges commands to the extension over WebSocket |
+| [humanizer](./skills/humanizer/) | Removes signs of AI-generated writing from text to make it sound more natural and human-written |
 
-The hashline approach originates from [oh-my-pi](https://github.com/can1357/oh-my-pi) by [can1357](https://github.com/can1357).
+## Attribution
+
+- The `humanizer` skill is copied from [blader/humanizer](https://github.com/blader/humanizer) by Siqi Chen and included under the MIT License.
+- The hashline approach originates from [oh-my-pi](https://github.com/can1357/oh-my-pi) by [can1357](https://github.com/can1357).
 
 ## Install
 
