@@ -1,0 +1,56 @@
+{
+  "name": "@pascal-de-ladurantaye/pi-agent",
+  "version": "0.1.0",
+  "description": "Custom Pi extensions, skills, prompt templates, and themes",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.0",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pascal-de-ladurantaye/pi-agent.git"
+  },
+  "homepage": "https://github.com/pascal-de-ladurantaye/pi-agent",
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "dependencies": {
+    "diff": "^8.0.0",
+    "ws": "^8.18.1"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-ai": {
+      "optional": true
+    },
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    },
+    "@mariozechner/pi-tui": {
+      "optional": true
+    },
+    "@sinclair/typebox": {
+      "optional": true
+    }
+  }
+}

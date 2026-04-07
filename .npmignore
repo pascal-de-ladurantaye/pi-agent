@@ -1,0 +1,8 @@
+node_modules/
+**/node_modules/
+**/package-lock.json
+.pi/
+.DS_Store
+.npmrc
+AGENTS.md
+/pnpm-lock.yaml

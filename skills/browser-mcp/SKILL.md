@@ -18,8 +18,10 @@ Control the user's real Chrome browser through the [Browser MCP](https://browser
 Install dependencies (only needed once):
 
 ```bash
-cd scripts && npm install
+cd scripts && pnpm install
 ```
+
+This script bundle keeps its own `package.json` so it can also be installed and run from the `scripts/` directory independently.
 
 The CLI is at `scripts/browser-mcp` relative to this SKILL.md. Use the full path for all commands:
 

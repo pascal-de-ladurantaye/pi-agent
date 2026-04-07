@@ -4,7 +4,7 @@ This repository contains custom extensions, themes, skills, and prompt templates
 
 ## Structure
 
-- **Extensions** live in `extensions/`. Each is a folder with an `index.ts` entry point and a `README.md`. Extensions can include additional source files, a `package.json` with dependencies, and whatever structure makes sense for the complexity of the extension.
+- **Extensions** live in `extensions/`. Each is a folder with an `index.ts` entry point and a `README.md`. Extensions can include additional source files and whatever structure makes sense for the complexity of the extension.
 - **Themes** live in `themes/`. Each is a `.json` file following pi's theme format (51 required color tokens, optional `vars` and `export` sections).
 - **Skills** live in `skills/`. Each is a folder named after the skill containing a `SKILL.md` with YAML frontmatter (`name`, `description`) and instructions. Skills can include scripts, references, and assets loaded on-demand by the agent.
 - **Prompt templates** live in `prompts/`. Each is a `.md` file with optional YAML frontmatter (`description`). The filename becomes the `/command` name (e.g., `review.md` → `/review`). Templates support positional arguments (`$1`, `$2`, `$@`).
@@ -23,7 +23,8 @@ When building or modifying any of the above, always read the corresponding pi do
 - Import types from `@mariozechner/pi-coding-agent` and `@mariozechner/pi-tui`
 - Use `@sinclair/typebox` for tool parameter schemas
 - Use `StringEnum` from `@mariozechner/pi-ai` for string enums (required for Google compatibility)
-- npm dependencies are supported — add a `package.json`, run `npm install`, and imports resolve automatically
+- Package dependencies are usually managed from the repo root — add them to the root `package.json`, run `pnpm install`, and imports resolve automatically
+- Local `package.json` files are acceptable when a component genuinely needs its own standalone install/runtime flow (for example script-local tooling)
 - Node.js built-ins (`node:fs`, `node:path`, `node:child_process`, etc.) are available
 - Test with `/reload` — extensions in auto-discovered locations hot-reload
 
@@ -55,9 +56,11 @@ When building or modifying any of the above, always read the corresponding pi do
 
 ### General
 
-- **All extension/theme/skill/prompt development happens in this repo**, never directly in `~/.pi/*/`. The `~/.pi/*/` directories contain symlinks created by `./install.sh`.
-- After making changes, run `./install.sh` to symlink into all `~/.pi/*/` profiles
-- Test extensions and themes with `/reload` for hot-reload without restarting pi
+- **All extension/theme/skill/prompt development happens in this repo**, never directly in `~/.pi/*/`.
+- This package relies on Pi's conventional resource directories via the root `pi` manifest: `extensions/`, `skills/`, `prompts/`, and `themes/`
+- Install this repo into a Pi profile with `pi install .` when needed; local-path installs point directly at this working tree
+- After making changes, use `/reload` to pick them up without restarting pi
+- Packaging is controlled via `.npmignore`; if you add unusual package-level runtime files, make sure they are not excluded
 
 ## Key APIs
 
