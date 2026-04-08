@@ -53,6 +53,7 @@ pi install .
 | [session-memory](./extensions/session-memory/) | Converts session JSONL to Obsidian-friendly markdown vault with callouts, indexes, canvas, and MOC |
 | [session-namer](./extensions/session-namer/) | Auto-names sessions using Claude Haiku on the first 3 turns |
 | [snapshot](./extensions/snapshot/) | Shadow-git filesystem checkpoints at each turn; offers file restore on `/fork` |
+| [shoulderpeek](./extensions/shoulderpeek/) | Quickly inspect the agent's work, annotate it, and aggregate notes into a follow-up prompt |
 
 ## Skills
 
