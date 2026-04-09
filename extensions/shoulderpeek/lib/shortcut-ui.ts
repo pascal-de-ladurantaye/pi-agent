@@ -77,7 +77,7 @@ function prettyKey(key: string): string {
 function keyLabelForSpec(keybindings: KeybindingsManager, spec: ShortcutKeySpec): string {
 	if (spec.kind === "raw") return prettyKey(spec.value);
 
-	const boundKeys = keybindings.getKeys(spec.value);
+	const boundKeys = keybindings.getKeys(spec.value as Parameters<KeybindingsManager["getKeys"]>[0]);
 	if (boundKeys.length === 0) return spec.fallback ? prettyKey(spec.fallback) : prettyKey(spec.value);
 	if (spec.allBindings) return boundKeys.map((key) => prettyKey(key)).join("/");
 	return prettyKey(boundKeys[0]!);
