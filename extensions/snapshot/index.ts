@@ -10,6 +10,8 @@
  *   session_start / session_switch / session_fork → baseline snapshot
  *   agent_end → post-agent snapshot (latency hidden while user reads results)
  *
+ * No-session / in-memory runs are skipped entirely.
+ *
  * No external state files. Everything lives in the session tree via
  * appendEntry, so it survives fork, resume, and reload automatically.
  */
@@ -19,8 +21,13 @@ import * as path from "node:path";
 import { track, diffSummary, restore, cleanup, setConfigDir, type FileStat } from "./lib";
 
 export default function (pi: ExtensionAPI) {
+	function hasPersistedSession(ctx: ExtensionContext): boolean {
+		return Boolean(ctx.sessionManager.getSessionFile() && ctx.sessionManager.getSessionDir());
+	}
+
 	/** Take a snapshot and append it to the session tree. */
 	async function snapshot(ctx: ExtensionContext) {
+		if (!hasPersistedSession(ctx)) return;
 		try {
 			const hash = await track(ctx.cwd);
 			if (hash) pi.appendEntry("snapshot", { hash });
@@ -29,6 +36,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Baseline snapshots ───────────────────────────────────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
+		if (!hasPersistedSession(ctx)) return;
 		setConfigDir(path.resolve(ctx.sessionManager.getSessionDir(), ".."));
 		await snapshot(ctx);
 		void cleanup(ctx.cwd);
@@ -51,7 +59,7 @@ export default function (pi: ExtensionAPI) {
 	// ── Restore on fork ──────────────────────────────────────────────────────
 
 	pi.on("session_before_fork", async (event, ctx) => {
-		if (!ctx.hasUI) return;
+		if (!ctx.hasUI || !hasPersistedSession(ctx)) return;
 
 		// Walk back from fork entry to find nearest snapshot
 		let current: string | null = event.entryId;

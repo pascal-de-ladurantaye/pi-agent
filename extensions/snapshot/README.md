@@ -40,6 +40,8 @@ Fork always targets a user message. Walking one hop back finds the snapshot:
 | `agent_end` | Post-agent snapshot (latency hidden while user reads results) |
 | `session_before_fork` | Walk back → find snapshot → offer restore |
 
+No-session / in-memory runs are skipped entirely, so helper RPC processes do not create shadow repos.
+
 No external state files. Everything lives in the session tree via `appendEntry`, so it survives fork, resume, and reload automatically.
 
 ### Cleanup
@@ -63,6 +65,7 @@ On session start, `git gc --prune=7.days` runs in the background (fire-and-forge
 
 - Respects `.gitignore` and `info/exclude` — untracked-and-ignored files are not snapshotted
 - Binary files are stored but not diffed
+- No-session / in-memory runs are ignored
 - The shadow repo can grow; GC runs automatically but large repos may need monitoring
 
 ## Credits
