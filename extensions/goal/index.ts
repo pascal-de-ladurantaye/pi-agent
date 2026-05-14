@@ -11,6 +11,8 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	let lastContext: ExtensionContext | undefined;
 	let queuedContinuationGoalId: string | undefined;
 	let defaultMaxContinuations: number | undefined;
+	let watchedAbortSignal: AbortSignal | undefined;
+	let unwatchAbortSignal: (() => void) | undefined;
 
 	pi.registerFlag("goal-max-continuations", {
 		description: "Optional cap for autonomous goal continuations. Empty means unlimited.",
@@ -63,11 +65,18 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	pi.on("agent_start", async (_event, ctx) => {
 		lastContext = ctx;
 		queuedContinuationGoalId = undefined;
+		watchAbortSignal(ctx);
 		updateGoalWidget(ctx, goal);
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", async (event, ctx) => {
 		lastContext = ctx;
+		if (agentEndWasAborted(event.messages)) {
+			pauseGoalForInterrupt("paused after agent interruption");
+		}
+		unwatchAbortSignal?.();
+		unwatchAbortSignal = undefined;
+		watchedAbortSignal = undefined;
 		updateGoalWidget(ctx, goal);
 		if (ctx.hasPendingMessages()) return;
 		continueGoal("agent-end");
@@ -86,8 +95,34 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async () => {
+		unwatchAbortSignal?.();
+		unwatchAbortSignal = undefined;
+		watchedAbortSignal = undefined;
 		lastContext = undefined;
 	});
+
+	function watchAbortSignal(ctx: ExtensionContext): void {
+		const signal = ctx.signal;
+		if (!signal || signal === watchedAbortSignal) return;
+		unwatchAbortSignal?.();
+		watchedAbortSignal = signal;
+
+		const onAbort = () => pauseGoalForInterrupt("paused after agent interruption");
+		if (signal.aborted) {
+			onAbort();
+			return;
+		}
+		signal.addEventListener("abort", onAbort, { once: true });
+		unwatchAbortSignal = () => signal.removeEventListener("abort", onAbort);
+	}
+
+	function pauseGoalForInterrupt(note: string): void {
+		const current = goal;
+		if (!current || current.status !== "active") return;
+		const paused = setGoalStatus(current, "paused");
+		setGoal(paused, "pause", note);
+		lastContext?.ui.notify("Goal paused after the agent was interrupted. Use /goal resume to continue.", "warning");
+	}
 
 	function setGoal(next: GoalState | undefined, event: GoalEvent, note?: string): void {
 		goal = next;
@@ -122,7 +157,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			{
 				customType: GOAL_CONTEXT_CUSTOM_TYPE,
 				content: continuationContext(next),
-				display: false,
+				display: true,
 				details: { goalId: next.goalId, reason },
 			},
 			{ triggerTurn: true, deliverAs: "followUp" },
@@ -137,6 +172,10 @@ function parseOptionalPositiveInteger(value: unknown): number | undefined {
 	if (!trimmed) return undefined;
 	const parsed = Number(trimmed);
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function agentEndWasAborted(messages: unknown[]): boolean {
+	return messages.some((message) => Boolean(message && typeof message === "object" && (message as { role?: unknown }).role === "assistant" && (message as { stopReason?: unknown }).stopReason === "aborted"));
 }
 
 function lastMessageAlreadyHasGoalContext(messages: unknown[]): boolean {

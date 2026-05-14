@@ -11,7 +11,7 @@ const tools = jiti("./extensions/goal/tools.ts");
 const goalExtension = jiti("./extensions/goal/index.ts").default;
 
 function mockCtx(branch = [], overrides = {}) {
-	const calls = { statuses: [], widgets: [], notifications: [], confirmations: [], editors: [] };
+	const calls = { statuses: [], widgets: [], notifications: [], confirmations: [], editors: [], terminalInputHandlers: [], terminalInputUnsubscribed: 0 };
 	const ctx = {
 		hasUI: true,
 		cwd: process.cwd(),
@@ -22,6 +22,14 @@ function mockCtx(branch = [], overrides = {}) {
 			setStatus: (key, text) => calls.statuses.push({ key, text }),
 			setWidget: (key, content, options) => calls.widgets.push({ key, content, options }),
 			notify: (message, type) => calls.notifications.push({ message, type }),
+			onTerminalInput: (handler) => {
+				calls.terminalInputHandlers.push(handler);
+				return () => {
+					calls.terminalInputUnsubscribed += 1;
+					const index = calls.terminalInputHandlers.indexOf(handler);
+					if (index !== -1) calls.terminalInputHandlers.splice(index, 1);
+				};
+			},
 			confirm: async () => true,
 			editor: async () => undefined,
 		},
@@ -263,6 +271,7 @@ describe("goal extension runtime", () => {
 		assert.equal(harness.entries.at(-1).data.event, "continue");
 		assert.equal(harness.messages.at(-1).options.triggerTurn, true);
 		assert.equal(harness.messages.at(-1).options.deliverAs, "followUp");
+		assert.equal(harness.messages.at(-1).message.display, true);
 		assert.match(harness.messages.at(-1).message.content, /restore and continue/);
 	});
 
@@ -355,6 +364,55 @@ describe("goal extension runtime", () => {
 		}
 	});
 
+	it("pauses the current goal when the active agent run is aborted", async () => {
+		const controller = new AbortController();
+		const goal = state.createGoal("pause on abort");
+		const harness = makePi();
+		goalExtension(harness.pi);
+		const { ctx, calls } = mockCtx([{ type: "custom", customType: "goal", data: { event: "create", goal } }], { isIdle: () => false, signal: controller.signal });
+		await invoke(harness.handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await invoke(harness.handlers, "agent_start", { type: "agent_start" }, ctx);
+
+		controller.abort();
+
+		assert.equal(harness.entries.at(-1).data.event, "pause");
+		assert.equal(harness.entries.at(-1).data.goal.status, "paused");
+		assert.equal(harness.entries.at(-1).data.note, "paused after agent interruption");
+		assert.match(calls.notifications.at(-1).message, /Goal paused after the agent was interrupted/);
+
+		await invoke(harness.handlers, "agent_end", { type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted" }] }, ctx);
+		assert.equal(harness.messages.length, 0, "paused goals must not resume autonomous continuation");
+	});
+
+	it("pauses on aborted agent_end even if the abort signal was not observed", async () => {
+		const goal = state.createGoal("pause on aborted end");
+		const harness = makePi();
+		goalExtension(harness.pi);
+		const { ctx } = mockCtx([{ type: "custom", customType: "goal", data: { event: "create", goal } }], { isIdle: () => false });
+		await invoke(harness.handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		await invoke(harness.handlers, "agent_end", { type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted" }] }, ctx);
+
+		assert.equal(harness.entries.at(-1).data.event, "pause");
+		assert.equal(harness.entries.at(-1).data.goal.status, "paused");
+		assert.equal(harness.messages.length, 0);
+	});
+
+	it("removes the abort listener on shutdown", async () => {
+		const controller = new AbortController();
+		const goal = state.createGoal("shutdown cleanup");
+		const harness = makePi();
+		goalExtension(harness.pi);
+		const { ctx } = mockCtx([{ type: "custom", customType: "goal", data: { event: "create", goal } }], { isIdle: () => false, signal: controller.signal });
+		await invoke(harness.handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await invoke(harness.handlers, "agent_start", { type: "agent_start" }, ctx);
+		await invoke(harness.handlers, "session_shutdown", { type: "session_shutdown" }, ctx);
+
+		controller.abort();
+
+		assert.equal(harness.entries.length, 0);
+	});
+
 	it("context hook skips inactive goals and non-UI sessions still run", async () => {
 		const completed = state.completeGoal(state.createGoal("done"), "model");
 		const harness = makePi();
@@ -429,6 +487,7 @@ describe("goal slash command", () => {
 		harness.messages.length = 0;
 		await command.handler("edit changed running", ctx);
 		assert.equal(harness.messages.at(-1).options.deliverAs, "steer");
+		assert.equal(harness.messages.at(-1).message.display, true);
 		assert.match(harness.messages.at(-1).message.content, /pi-goal-updated/);
 	});
 

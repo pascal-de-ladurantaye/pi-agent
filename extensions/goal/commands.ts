@@ -121,7 +121,7 @@ async function editGoal(pi: ExtensionAPI, runtime: GoalRuntime, ctx: ExtensionCo
 			{
 				customType: "goal-context",
 				content: objectiveUpdatedPrompt(updated),
-				display: false,
+				display: true,
 				details: { goalId: updated.goalId, reason: "goal-edited" },
 			},
 			{ triggerTurn: true, deliverAs: "steer" },

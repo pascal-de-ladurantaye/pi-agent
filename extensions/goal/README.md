@@ -12,6 +12,8 @@ Autonomous session goals for Pi, inspired by Codex's `/goal` feature.
 - Persists goal state in Pi session custom entries, so state follows the current branch across `/fork` and `/tree`.
 - Shows a detailed widget below the editor with objective, status, autonomous mode, and continuation count.
 - Defaults to autonomous continuation: an active autonomous goal keeps triggering follow-up turns until the model marks it complete or the user pauses/clears it.
+- Detects interrupted agent runs (for example, pressing Escape while the agent is running) and pauses the active goal instead of auto-continuing.
+- Keeps goal continuation and steering messages visible in the transcript instead of hiding extension-inserted context.
 - Does not implement token/time budgeting yet.
 
 ## Commands
