@@ -49,6 +49,7 @@ pi install .
 |---|---|
 | [bash-guard](./extensions/bash-guard/) | Adversarial security review for bash commands — parallel LLM voters assess safety before execution |
 | [cross-agent-discovery](./extensions/cross-agent-discovery/) | Discovers project-local Claude slash commands (`.claude/commands/*.md`) and registers them as pi prompt templates |
+| [goal](./extensions/goal/) | Autonomous session goals inspired by Codex `/goal`, with slash commands, model tools, persisted state, and a status widget |
 | [hashline](./extensions/hashline/) | Content-anchored line editing — overrides read/grep/edit with `LINE:HASH` references for precise, drift-resistant edits |
 | [session-memory](./extensions/session-memory/) | Converts session JSONL to Obsidian-friendly markdown vault with callouts, indexes, canvas, and MOC |
 | [session-namer](./extensions/session-namer/) | Auto-names sessions using Claude Haiku on the first 3 turns |

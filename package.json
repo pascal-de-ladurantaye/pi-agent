@@ -15,6 +15,10 @@
     "url": "https://github.com/pascal-de-ladurantaye/pi-agent.git"
   },
   "homepage": "https://github.com/pascal-de-ladurantaye/pi-agent",
+  "scripts": {
+    "test": "node --test \"extensions/**/*.test.mjs\"",
+    "typecheck": "tsc --noEmit --moduleResolution bundler --module ESNext --target ES2022 --skipLibCheck --types node --allowImportingTsExtensions extensions/goal/index.ts"
+  },
   "pi": {
     "extensions": [
       "./extensions"
@@ -52,5 +56,13 @@
     "@sinclair/typebox": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@mariozechner/jiti": "2.6.5",
+    "@mariozechner/pi-ai": "0.65.2",
+    "@mariozechner/pi-coding-agent": "0.65.2",
+    "@sinclair/typebox": "0.34.49",
+    "@types/node": "^25.6.1",
+    "typescript": "^6.0.3"
   }
 }
