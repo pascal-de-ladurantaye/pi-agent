@@ -13,7 +13,8 @@ Autonomous session goals for Pi, inspired by Codex's `/goal` feature.
 - Shows a detailed widget below the editor with objective, status, autonomous mode, and continuation count.
 - Defaults to autonomous continuation: an active autonomous goal keeps triggering follow-up turns until the model marks it complete or the user pauses/clears it.
 - Detects interrupted agent runs (for example, pressing Escape while the agent is running) and pauses the active goal instead of auto-continuing.
-- Keeps goal continuation and steering messages visible in the transcript instead of hiding extension-inserted context.
+- Keeps explicit goal events visible, while routine agent-end continuations stay quiet except for periodic visible checkpoints.
+- Does not inject recurring active-goal reminders into ordinary turns; model-visible goal context is reserved for continuations and objective edits.
 - Does not implement token/time budgeting yet.
 
 ## Commands
@@ -60,3 +61,5 @@ On session start or tree navigation, the extension restores the latest goal snap
 ## Notes
 
 This extension intentionally omits Codex's token budget and elapsed-time accounting in the first version. The continuation prompt keeps Codex's core completion-audit behavior: the model should only call `goal_update` after verifying the full objective against current evidence.
+
+Routine autonomous continuations are still sent to the model, but they are not all rendered in the transcript. User-facing goal creation, resume/edit updates, session-start restoration, cap pauses, and every fifth routine continuation remain visible so the session stays explainable without repetitive “continuing the goal” chatter. Ordinary user turns do not receive an extra active-goal reminder.

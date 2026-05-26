@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { activeGoalContextPrompt, continuationContext } from "./prompts";
+import { continuationContext } from "./prompts";
 import { registerGoalCommand } from "./commands";
 import { createGoal, markContinuationQueued, persistGoal, restoreGoalFromBranch, setGoalStatus } from "./state";
 import { GOAL_CONTEXT_CUSTOM_TYPE, type GoalEvent, type GoalRuntime, type GoalState } from "./types";
@@ -10,6 +10,8 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	let goal: GoalState | undefined;
 	let lastContext: ExtensionContext | undefined;
 	let queuedContinuationGoalId: string | undefined;
+	let scheduledContinuation: ReturnType<typeof setTimeout> | undefined;
+	let scheduledContinuationGoalId: string | undefined;
 	let defaultMaxContinuations: number | undefined;
 	let watchedAbortSignal: AbortSignal | undefined;
 	let unwatchAbortSignal: (() => void) | undefined;
@@ -59,6 +61,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		lastContext = ctx;
 		goal = restoreGoalFromBranch(ctx);
 		queuedContinuationGoalId = undefined;
+		clearScheduledContinuation();
 		updateGoalWidget(ctx, goal);
 	});
 
@@ -79,22 +82,11 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		watchedAbortSignal = undefined;
 		updateGoalWidget(ctx, goal);
 		if (ctx.hasPendingMessages()) return;
-		continueGoal("agent-end");
-	});
-
-	pi.on("context", async (event, ctx) => {
-		lastContext = ctx;
-		if (!goal || goal.status !== "active") return;
-		if (lastMessageAlreadyHasGoalContext(event.messages)) return;
-		event.messages.push({
-			role: "user",
-			content: [{ type: "text", text: activeGoalContextPrompt(goal) }],
-			timestamp: Date.now(),
-		});
-		return { messages: event.messages };
+		scheduleGoalContinuation("agent-end", ctx);
 	});
 
 	pi.on("session_shutdown", async () => {
+		clearScheduledContinuation();
 		unwatchAbortSignal?.();
 		unwatchAbortSignal = undefined;
 		watchedAbortSignal = undefined;
@@ -126,9 +118,38 @@ export default function goalExtension(pi: ExtensionAPI): void {
 
 	function setGoal(next: GoalState | undefined, event: GoalEvent, note?: string): void {
 		goal = next;
-		if (!next || next.status !== "active") queuedContinuationGoalId = undefined;
+		if (!next || next.status !== "active") {
+			queuedContinuationGoalId = undefined;
+			clearScheduledContinuation();
+		} else if (scheduledContinuationGoalId !== undefined && scheduledContinuationGoalId !== next.goalId) {
+			clearScheduledContinuation();
+		}
 		persistGoal((customType, data) => pi.appendEntry(customType, data), event, next, note);
 		if (lastContext) updateGoalWidget(lastContext, next);
+	}
+
+	function scheduleGoalContinuation(reason: string, ctx: ExtensionContext): boolean {
+		const current = goal;
+		if (!current || current.status !== "active" || !current.autonomous) return false;
+		if (queuedContinuationGoalId === current.goalId || scheduledContinuationGoalId === current.goalId) return false;
+		const goalId = current.goalId;
+		scheduledContinuationGoalId = goalId;
+		scheduledContinuation = setTimeout(() => {
+			scheduledContinuation = undefined;
+			scheduledContinuationGoalId = undefined;
+			if (goal?.goalId !== goalId) return;
+			if (ctx.hasPendingMessages()) return;
+			continueGoal(reason);
+		}, 0);
+		return true;
+	}
+
+	function clearScheduledContinuation(): void {
+		if (scheduledContinuation !== undefined) {
+			clearTimeout(scheduledContinuation);
+			scheduledContinuation = undefined;
+		}
+		scheduledContinuationGoalId = undefined;
 	}
 
 	function continueGoal(reason: string): boolean {
@@ -157,13 +178,18 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			{
 				customType: GOAL_CONTEXT_CUSTOM_TYPE,
 				content: continuationContext(next),
-				display: true,
+				display: shouldDisplayContinuation(next, reason),
 				details: { goalId: next.goalId, reason },
 			},
 			{ triggerTurn: true, deliverAs: "followUp" },
 		);
 		return true;
 	}
+}
+
+function shouldDisplayContinuation(goal: GoalState, reason: string): boolean {
+	if (reason !== "agent-end") return true;
+	return goal.continuationCount === 1 || goal.continuationCount % 5 === 0;
 }
 
 function parseOptionalPositiveInteger(value: unknown): number | undefined {
@@ -176,21 +202,4 @@ function parseOptionalPositiveInteger(value: unknown): number | undefined {
 
 function agentEndWasAborted(messages: unknown[]): boolean {
 	return messages.some((message) => Boolean(message && typeof message === "object" && (message as { role?: unknown }).role === "assistant" && (message as { stopReason?: unknown }).stopReason === "aborted"));
-}
-
-function lastMessageAlreadyHasGoalContext(messages: unknown[]): boolean {
-	const last = messages[messages.length - 1];
-	const text = messageText(last);
-	return text.includes("<goal_context source=\"pi-goal-continuation\"") || text.includes("<goal_context source=\"pi-goal-active\"") || text.includes("<goal_context source=\"pi-goal-updated\"");
-}
-
-function messageText(message: unknown): string {
-	if (!message || typeof message !== "object") return "";
-	const content = (message as { content?: unknown }).content;
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.filter((part): part is { type: "text"; text: string } => Boolean(part) && typeof part === "object" && (part as { type?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string")
-		.map((part) => part.text)
-		.join("\n");
 }

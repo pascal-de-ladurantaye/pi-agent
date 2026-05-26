@@ -38,6 +38,7 @@ Use the current worktree and external state as authoritative. Previous conversat
 
 Progress visibility:
 If a planning tool or concise plan update is available and the next work is meaningfully multi-step, use it to show a plan tied to the real objective. Keep the plan current as steps complete or the next best action changes. Skip planning overhead for trivial one-step progress, and do not treat a plan update as a substitute for doing the work.
+Do not announce that you are continuing the active goal. Avoid boilerplate like "I'm continuing the active goal" or "I'll continue from the active goal"; proceed directly with the next concrete action unless a short progress update is genuinely useful to the user.
 
 Fidelity:
 - Optimize each turn for movement toward the requested end state, not for the smallest stable-looking subset or easiest passing change.
@@ -58,18 +59,6 @@ Before deciding that the goal is achieved, treat completion as unproven and veri
 Do not rely on intent, partial progress, memory of earlier work, or a plausible final answer as proof of completion. Marking the goal complete is a claim that the full objective has been finished and can withstand requirement-by-requirement scrutiny. Only mark the goal achieved when current evidence proves every requirement has been satisfied and no required work remains. If the evidence is incomplete, weak, indirect, merely consistent with completion, or leaves any requirement missing, incomplete, or unverified, keep working instead of marking the goal complete.
 
 If the objective is achieved, call goal_update with status "complete". Do not call goal_update unless the goal is complete. Do not mark a goal complete merely because you are stopping work.`;
-}
-
-export function activeGoalContextPrompt(goal: GoalState): string {
-	const objective = escapeXmlText(goal.objective);
-	return `<goal_context source="pi-goal-active" goal_id="${goal.goalId}">
-Active session goal:
-<objective>
-${objective}
-</objective>
-
-Keep this goal in mind while responding. If the user's latest request conflicts with the active goal, follow the user's latest request and do not continue unrelated goal work until appropriate. Only call goal_update with status "complete" when the full objective is actually complete and verified.
-</goal_context>`;
 }
 
 export function objectiveUpdatedPrompt(goal: GoalState): string {
