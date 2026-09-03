@@ -21,7 +21,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const INJECT_RE = /!`([^`]+)`/g;
+const INJECT_RE = /(?<![\w`])!`([^`\n]+)`/g;
 
 export default function (pi: ExtensionAPI) {
 	// messageKey (timestamp + content hash) → (command → output)
