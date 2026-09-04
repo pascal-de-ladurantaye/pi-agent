@@ -15,13 +15,12 @@ The package uses Pi's conventional directories via the root `pi` manifest:
 ### Local checkout
 
 ```bash
-pnpm install
-pi install .
+./install.sh
 ```
 
-Then run `/reload` in pi.
+The installer runs `pnpm install`, registers this checkout with `pi install .`, and links [`APPEND_SYSTEM.md`](./APPEND_SYSTEM.md) to `${PI_CODING_AGENT_DIR:-~/.pi/agent}/APPEND_SYSTEM.md`. Pi appends that file to its default system prompt. The installer refuses to replace a file or unrelated symlink at that path.
 
-> Pi does not run dependency installation for local-path packages, so a local checkout needs one `pnpm install` before `pi install .`.
+Then run `/reload` in Pi.
 
 ### Git / remote install
 
@@ -31,7 +30,7 @@ pi install git:https://github.com/pascal-de-ladurantaye/pi-agent
 pi install https://github.com/pascal-de-ladurantaye/pi-agent
 ```
 
-For git and npm packages, pi runs `npm install` automatically.
+For git and npm packages, Pi runs `npm install` automatically. Package installation loads extensions, skills, prompts, and themes, but Pi packages do not install global system-prompt files. Use the local-checkout installer when you also want `APPEND_SYSTEM.md`.
 
 ### Development workflow
 
@@ -82,12 +81,19 @@ If you installed this repo as a local package from the repo root:
 
 ```bash
 pi remove "$(pwd)"
+prompt="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/APPEND_SYSTEM.md"
+[[ -L "$prompt" && "$(readlink "$prompt")" == "$(pwd)/APPEND_SYSTEM.md" ]] && rm "$prompt"
 ```
 
-Or remove the same absolute path you originally installed. Use `pi list` to inspect installed packages and their sources.
+This removes `APPEND_SYSTEM.md` only when it still links to this checkout. Remove the same package path you originally installed. Use `pi list` to inspect installed packages and their sources.
+
+## Append-system prompt
+
+[`APPEND_SYSTEM.md`](./APPEND_SYSTEM.md) contains the body of pstack's [`unslop` skill](https://github.com/cursor/plugins/blob/main/pstack/skills/unslop/SKILL.md), without skill frontmatter. Linking it into Pi's global agent configuration makes those writing rules apply to every task instead of loading them only when a skill matches.
 
 ## Attribution
 
+- `APPEND_SYSTEM.md` is adapted from Lauren Tan's [pstack `unslop` skill](https://github.com/cursor/plugins/blob/main/pstack/skills/unslop/SKILL.md) and included under the [MIT License](./licenses/pstack-unslop.LICENSE).
 - The `humanizer` skill is copied from [blader/humanizer](https://github.com/blader/humanizer) by Siqi Chen and included under the MIT License.
 - The hashline approach originates from [oh-my-pi](https://github.com/can1357/oh-my-pi) by [can1357](https://github.com/can1357).
 
