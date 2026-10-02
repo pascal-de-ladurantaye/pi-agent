@@ -5,6 +5,7 @@
  * races a post (echo protection depends on knowing every ts we posted).
  */
 
+import { execFile } from "node:child_process";
 import { slackToPlain, splitMarkdown, toMrkdwn } from "./mrkdwn.ts";
 import type { BridgeConfig, SlackApi } from "./slack.ts";
 import { AUTH_ERRORS, SlackError } from "./slack.ts";
@@ -37,6 +38,18 @@ export interface BridgeHost {
 	describe(): { cwd: string; name?: string; model?: string };
 }
 
+export type CommandRunner = (command: string[], env: Record<string, string>) => Promise<void>;
+
+/** Run a notify command with a 20s timeout. Rejects with the first stderr line on failure. */
+export const runCommand: CommandRunner = (command, env) =>
+	new Promise((resolve, reject) => {
+		execFile(command[0], command.slice(1), { timeout: 20_000, env: { ...process.env, ...env } }, (error, _stdout, stderr) => {
+			if (!error) return resolve();
+			const detail = String(stderr).trim().split("\n")[0] || error.message;
+			reject(new Error(`notify command failed: ${detail}`));
+		});
+	});
+
 export interface BridgeOptions {
 	pollActiveMs: number;
 	pollIdleMs: number;
@@ -46,6 +59,7 @@ export interface BridgeOptions {
 	now: () => number;
 	setTimer: (fn: () => void, ms: number) => unknown;
 	clearTimer: (handle: unknown) => void;
+	runCommand: CommandRunner;
 }
 
 export const DEFAULT_OPTIONS: BridgeOptions = {
@@ -61,6 +75,7 @@ export const DEFAULT_OPTIONS: BridgeOptions = {
 		return handle;
 	},
 	clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+	runCommand,
 };
 
 type Status = "idle" | "working" | "waiting for a terminal dialog" | "reply held: unsent draft in the terminal" | "off" | "ended";
@@ -110,6 +125,7 @@ export class SlackBridge {
 	private reportedErrors = new Set<string>();
 	private nextUserSource: string | undefined;
 	private authFailed = false;
+	private turnFromSlack = false;
 	private readonly options: BridgeOptions;
 
 	constructor(
@@ -307,9 +323,12 @@ export class SlackBridge {
 		this.agentBusy = false;
 		if (!this.isMirroring()) return;
 		const hadReply = !!this.segment && this.segmentMarkdown(this.segment) !== "";
+		const fromSlack = this.turnFromSlack;
+		this.turnFromSlack = false;
 		this.finishSegment();
 		this.setStatus("idle");
-		if (hadReply && this.config?.notifyOnSettle) this.enqueue(() => this.postNotice());
+		const wanted = this.config?.notifyWhen !== "slack" || fromSlack;
+		if (hadReply && wanted && this.config?.notifyOnSettle) this.enqueue(() => this.postNotice());
 		this.deliverPending();
 	}
 
@@ -505,6 +524,20 @@ export class SlackBridge {
 			const link = await this.api!.call<{ permalink: string }>("chat.getPermalink", { channel: thread.channel, message_ts: thread.threadTs });
 			this.permalink = link.permalink;
 		}
+		const info = this.host.describe();
+		const name = toMrkdwn(info.name || `session ${sessionId.slice(0, 8)}`).replace(/\n/g, " ");
+		const text = `pi finished a turn in *${name}*: <${this.permalink}|open thread>`;
+
+		const command = this.config?.notifyCommand;
+		if (command) {
+			// Sent by someone else (for example a bot), so Slack marks it unread.
+			await this.options.runCommand([...command, text], {
+				PI_SLACK_BRIDGE_SESSION: info.name || sessionId,
+				PI_SLACK_BRIDGE_THREAD_URL: this.permalink,
+			});
+			return;
+		}
+
 		for (const ts of this.notices.splice(0)) {
 			try {
 				await this.api!.call("chat.delete", { channel: thread.channel, ts });
@@ -513,11 +546,9 @@ export class SlackBridge {
 			}
 			this.host.append({ kind: "notice", sessionId, ts, deleted: true });
 		}
-		const info = this.host.describe();
-		const name = info.name || `session ${sessionId.slice(0, 8)}`;
 		const posted = await this.api!.call<{ ts: string }>("chat.postMessage", {
 			channel: thread.channel,
-			text: `pi finished a turn in *${toMrkdwn(name).replace(/\n/g, " ")}*: <${this.permalink}|open thread>`,
+			text,
 			unfurl_links: false,
 			unfurl_media: false,
 			metadata: { event_type: METADATA_EVENT, event_payload: { role: "notice" } },
@@ -601,6 +632,7 @@ export class SlackBridge {
 			thread.cursor = maxTs(thread.cursor, reply.ts);
 			this.host.append({ kind: "inbound", sessionId: this.host.sessionId(), threadTs: thread.threadTs, ts: reply.ts });
 			this.injected.push(text);
+			this.turnFromSlack = true;
 			this.touch();
 			try {
 				if (idle) this.host.sendUserMessage(text);

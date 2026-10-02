@@ -22,7 +22,7 @@ Mirroring is opt-in per session. Nothing reaches Slack until you run `/slack on`
 - Each turn you type in the terminal is posted to the thread as *you, in the terminal*.
 - The assistant reply is posted as *pi* and edited as it streams, at most once every 2.5 seconds, with a `working: running <tool>` footer. When the run settles the footer goes away.
 - Replies longer than 12,000 characters are split into numbered parts. Splits fall on paragraph or line boundaries, and code fences are closed and reopened across parts.
-- When a run finishes, a short top-level DM links to the thread. The previous notice for the same session is deleted so only the latest one stays. Set `"notifyOnSettle": false` to turn this off.
+- When a run finishes, the bridge sends a short notice that links to the thread. By default it is a top-level message in your self-DM, and the previous notice for the same session is deleted. Slack never marks your own messages unread, so set `notifyCommand` to get a real notification (see [Notifications](#notifications)). Set `"notifyOnSettle": false` to turn notices off.
 - Only user and assistant text is sent. Tool calls, tool output, thinking and system prompts stay local. Images are not mirrored.
 
 ### Replies from Slack
@@ -92,10 +92,12 @@ chmod 600 ~/.config/pi-slack-bridge/config.json
 |---|---|---|
 | `token` | yes | `xoxp-` user token or `xoxc-` client token |
 | `cookie` | for `xoxc-` | value of Slack's `d` cookie (`xoxd-...`) |
-| `notifyOnSettle` | no | top-level notice when a run finishes, default `true` |
+| `notifyOnSettle` | no | send a notice when a run finishes, default `true` |
+| `notifyCommand` | no | program, or array of program and arguments, that sends the notice instead of the self-DM (see [Notifications](#notifications)) |
+| `notifyWhen` | no | `"always"` (default) or `"slack"`, which notifies only for runs started by a Slack reply |
 | `channel` | no | DM channel id to use instead of discovering your self-DM |
 
-Posts appear as you with either token type. Slack does not send you notifications for your own messages, so the top-level notice is how a finished run shows up in the DM list.
+Posts appear as you with either token type, so Slack shows them as read and never notifies you about them. Use `notifyCommand` if you want a notification when a run finishes.
 
 ### Option 1: user token from a Slack app (recommended)
 
@@ -151,6 +153,41 @@ Client credentials last as long as that browser login. Signing out of Slack in t
 - If Slack rejects the token while a session is mirroring, the bridge stops polling and posting. The footer shows `slack: auth error`, and pi tells you to run `/slack auth`. After you paste a fresh curl, mirroring resumes in the same thread, and replies typed in Slack in the meantime are delivered.
 - Other pi sessions read the new config the next time they connect (`/slack on`, `/slack auth`, or a reload or resume).
 
+## Notifications
+
+Everything the bridge posts comes from your own account. Slack does not mark those messages unread or send push notifications for them, not even for a self-mention. A notification has to come from another sender, such as a bot.
+
+`notifyCommand` hands the notice to a program you choose. When a run finishes, the bridge runs it with the notice text as the last argument:
+
+```json
+{
+  "token": "xoxc-...",
+  "cookie": "xoxd-...",
+  "notifyCommand": ["/path/to/dm-me.sh"],
+  "notifyWhen": "always"
+}
+```
+
+- The text is Slack mrkdwn with a link to the thread, for example `pi finished a turn in *My session*: <https://...|open thread>`.
+- The program also gets `PI_SLACK_BRIDGE_SESSION` (session name or id) and `PI_SLACK_BRIDGE_THREAD_URL` in its environment.
+- A leading `~/` in the program path is expanded. Nothing runs through a shell.
+- The program has 20 seconds. A non-zero exit shows its first stderr line in pi once. Mirroring keeps going.
+- With `notifyCommand` set, the self-DM notice is not posted.
+- `"notifyWhen": "slack"` notifies only for runs started by a reply in Slack, on the theory that if you replied from Slack you are away from the terminal.
+
+A minimal program that sends the notice from a bot token with `chat:write`:
+
+```sh
+#!/bin/sh
+# dm-me.sh: post $1 to your DM with the bot. SLACK_BOT_TOKEN and SLACK_USER_ID come from your environment.
+curl -sS -m 15 https://slack.com/api/chat.postMessage \
+  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  --data-urlencode "channel=$SLACK_USER_ID" \
+  --data-urlencode "text=$1" | grep -q '"ok":true'
+```
+
+Any existing "DM me" tool works the same way, as long as it takes the message as its last argument.
+
 ## Limits
 
 - Each mirrored session polls its own thread. Slack allows `conversations.replies` about 50 times a minute per token (Tier 3), which covers about four sessions polling every 5 seconds. Past that Slack answers with HTTP 429 and the bridge waits for `Retry-After`, so replies arrive more slowly but nothing is lost.
@@ -167,4 +204,4 @@ Client credentials last as long as that browser login. Signing out of Slack in t
 - `mrkdwn.ts` converts markdown to mrkdwn, splits long messages and converts Slack text back.
 - `slack.ts` loads the config and calls the Slack Web API.
 - `auth.ts` extracts credentials from a pasted curl command, verifies them and writes the config.
-- `slack-bridge.test.mjs` covers conversion, splitting, state rebuild, fork handling, echo filtering, held replies, the client and credential rotation.
+- `slack-bridge.test.mjs` covers conversion, splitting, state rebuild, fork handling, echo filtering, held replies, the client, credential rotation and notify commands.

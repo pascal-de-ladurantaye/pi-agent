@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createJiti } from "@mariozechner/jiti";
@@ -205,7 +205,7 @@ describe("config and client", () => {
 
 // ------------------------------------------------------------- bridge harness
 
-function harness({ sessionId = "s1", entries = [], editor = "", replies = [] } = {}) {
+function harness({ sessionId = "s1", entries = [], editor = "", replies = [], config = {}, runCommand } = {}) {
 	let now = 1_000_000;
 	let tsSeq = 200;
 	const timers = [];
@@ -242,7 +242,8 @@ function harness({ sessionId = "s1", entries = [], editor = "", replies = [] } =
 		setStatus: (text) => state.statuses.push(text),
 		describe: () => ({ cwd: "/repo", name: "My session", model: "m1" }),
 	};
-	const bridge = new SlackBridge(host, () => ({ api, config: { token: "xoxp-x", notifyOnSettle: true } }), {
+	const bridge = new SlackBridge(host, () => ({ api, config: { token: "xoxp-x", notifyOnSettle: true, ...config } }), {
+		...(runCommand ? { runCommand } : {}),
 		now: () => now,
 		setTimer: (fn, ms) => {
 			const t = { fn, at: now + ms, done: false };
@@ -597,5 +598,81 @@ describe("/slack command sign-in", () => {
 		assert.equal(c.confirms.length, 0);
 		assert.ok(c.notes.some((n) => /Run \/slack on to start/.test(n.message)));
 		delete process.env.PI_SLACK_BRIDGE_CONFIG;
+	});
+});
+
+describe("notify command", () => {
+	it("parses notifyCommand and notifyWhen", () => {
+		const dir = mkdtempSync(join(tmpdir(), "slack-bridge-notify-"));
+		const path = join(dir, "config.json");
+		const write = (extra) => writeFileSync(path, JSON.stringify({ token: "xoxp-1", ...extra }), { mode: 0o600 });
+		write({ notifyCommand: "~/bin/dm.sh" });
+		assert.deepEqual(loadConfig(path).notifyCommand, [join(homedir(), "bin/dm.sh")]);
+		assert.equal(loadConfig(path).notifyWhen, "always");
+		write({ notifyCommand: ["/usr/bin/env", "dm", "~keep"], notifyWhen: "slack" });
+		assert.deepEqual(loadConfig(path).notifyCommand, ["/usr/bin/env", "dm", "~keep"]);
+		assert.equal(loadConfig(path).notifyWhen, "slack");
+		write({ notifyCommand: [] });
+		assert.throws(() => loadConfig(path), /notifyCommand/);
+		write({ notifyWhen: "sometimes" });
+		assert.throws(() => loadConfig(path), /notifyWhen/);
+	});
+
+	it("runs the command instead of posting a self-DM notice", async () => {
+		const runs = [];
+		const h = harness({ config: { notifyCommand: ["/bin/dm", "--quiet"] }, runCommand: async (command, env) => runs.push({ command, env }) });
+		await h.bridge.on();
+		h.bridge.onAssistantEnd({ content: [{ type: "text", text: "done" }] });
+		h.bridge.onSettled();
+		await h.flush();
+		assert.equal(runs.length, 1);
+		assert.deepEqual(runs[0].command, ["/bin/dm", "--quiet", "pi finished a turn in *My session*: <https://slack/p1|open thread>"]);
+		assert.deepEqual(runs[0].env, { PI_SLACK_BRIDGE_SESSION: "My session", PI_SLACK_BRIDGE_THREAD_URL: "https://slack/p1" });
+		assert.ok(!h.calls.some((c) => c.method === "chat.postMessage" && !c.params.thread_ts && /finished/.test(c.params.text)));
+		assert.equal(h.records("notice").length, 0);
+	});
+
+	it("only notifies for Slack-started turns when notifyWhen is slack", async () => {
+		const runs = [];
+		const h = harness({ config: { notifyCommand: ["/bin/dm"], notifyWhen: "slack" }, runCommand: async (command) => runs.push(command) });
+		await h.bridge.on();
+		h.bridge.onUserMessage({ role: "user", content: "local" });
+		h.bridge.onAgentStart();
+		h.bridge.onAssistantEnd({ content: [{ type: "text", text: "one" }] });
+		h.bridge.onSettled();
+		await h.flush();
+		assert.equal(runs.length, 0);
+
+		h.state.replies.push({ ts: "900.0", user: "U1", text: "from my phone" });
+		await h.bridge.poll();
+		h.bridge.onUserMessage({ role: "user", content: "from my phone" });
+		h.bridge.onAgentStart();
+		h.bridge.onAssistantEnd({ content: [{ type: "text", text: "two" }] });
+		h.bridge.onSettled();
+		await h.flush();
+		assert.equal(runs.length, 1);
+	});
+
+	it("reports a failing command once and keeps mirroring", async () => {
+		const h = harness({ config: { notifyCommand: ["/bin/dm"] }, runCommand: async () => Promise.reject(new Error("notify command failed: run quick auth")) });
+		await h.bridge.on();
+		for (let i = 0; i < 2; i++) {
+			h.bridge.onAssistantEnd({ content: [{ type: "text", text: `reply ${i}` }] });
+			h.bridge.onSettled();
+			await h.flush();
+		}
+		assert.equal(h.state.notes.filter((n) => /run quick auth/.test(n.message)).length, 1);
+		assert.match(h.bridge.describeStatus(), /mirroring: on/);
+	});
+
+	it("passes the text as an argument to a real program", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "slack-bridge-cmd-"));
+		const script = join(dir, "dm.sh");
+		writeFileSync(script, `#!/bin/sh\nprintf '%s|%s' "$1" "$PI_SLACK_BRIDGE_THREAD_URL" > "${join(dir, "out")}"\n`, { mode: 0o700 });
+		const { runCommand } = jiti("./extensions/slack-bridge/bridge.ts");
+		await runCommand([script, "hello *there*"], { PI_SLACK_BRIDGE_THREAD_URL: "https://t" });
+		assert.equal(readFileSync(join(dir, "out"), "utf8"), "hello *there*|https://t");
+		writeFileSync(script, "#!/bin/sh\necho 'quick auth failed' >&2\nexit 1\n", { mode: 0o700 });
+		await assert.rejects(runCommand([script, "x"], {}), /notify command failed: quick auth failed/);
 	});
 });
