@@ -4,6 +4,8 @@ Mirror a pi session to a thread in your Slack DM with yourself. Reply in the thr
 
 Mirroring is opt-in per session. Nothing reaches Slack until you run `/slack on`.
 
+![A mirrored session in Slack: the thread header shows the session name, working directory, model and idle status. A reply sent from Slack has a check mark reaction, and pi's answer follows it in the thread.](docs/slack-thread.png)
+
 ## Commands
 
 ```text
