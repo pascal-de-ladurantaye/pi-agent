@@ -52,6 +52,7 @@ pi install .
 | [hashline](./extensions/hashline/) | Content-anchored line editing — overrides read/grep/edit with `LINE:HASH` references for precise, drift-resistant edits |
 | [session-memory](./extensions/session-memory/) | Converts session JSONL to Obsidian-friendly markdown vault with callouts, indexes, canvas, and MOC |
 | [session-namer](./extensions/session-namer/) | Auto-names sessions using Claude Haiku on the first 3 turns |
+| [slack-bridge](./extensions/slack-bridge/) | Opt-in mirror of a session to a thread in your Slack self-DM; replies in the thread become agent turns |
 | [snapshot](./extensions/snapshot/) | Shadow-git filesystem checkpoints at each turn; offers file restore on `/fork` |
 | [shoulderpeek](./extensions/shoulderpeek/) | Quickly inspect the agent's work, annotate it, and aggregate notes into a follow-up prompt |
 
