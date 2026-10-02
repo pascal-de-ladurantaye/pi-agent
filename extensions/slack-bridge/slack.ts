@@ -11,14 +11,6 @@ export interface BridgeConfig {
 	cookie?: string;
 	/** Post a short top-level DM notice when a turn finishes. Default true. */
 	notifyOnSettle?: boolean;
-	/**
-	 * Program (and leading arguments) to run instead of posting the notice in the
-	 * self-DM. The notice text is appended as the last argument. Use it to send the
-	 * notice from a bot, which Slack shows as unread and notifies about.
-	 */
-	notifyCommand?: string[];
-	/** Which finished turns notify: every turn, or only turns started from a Slack reply. Default "always". */
-	notifyWhen?: "always" | "slack";
 	/** Override the self-DM channel id. Normally discovered with conversations.open. */
 	channel?: string;
 }
@@ -52,21 +44,8 @@ export function loadConfig(path = configPath()): BridgeConfig {
 	if (config.token.startsWith("xoxc-") && typeof config.cookie !== "string") {
 		throw new ConfigError(`${path}: xoxc- tokens also need "cookie" (the xoxd- value of Slack's d cookie).`);
 	}
-	let notifyCommand: string[] | undefined;
-	if (config.notifyCommand !== undefined) {
-		const raw = typeof config.notifyCommand === "string" ? [config.notifyCommand] : config.notifyCommand;
-		if (!Array.isArray(raw) || !raw.length || !raw.every((part) => typeof part === "string" && part)) {
-			throw new ConfigError(`${path}: "notifyCommand" must be a program path or an array of program and arguments.`);
-		}
-		notifyCommand = raw.map((part, i) => (i === 0 ? part.replace(/^~(?=\/|$)/, homedir()) : part));
-	}
-	if (config.notifyWhen !== undefined && config.notifyWhen !== "always" && config.notifyWhen !== "slack") {
-		throw new ConfigError(`${path}: "notifyWhen" must be "always" or "slack".`);
-	}
 	return {
 		token: config.token,
-		notifyCommand,
-		notifyWhen: config.notifyWhen ?? "always",
 		cookie: config.cookie ? config.cookie.replace(/^d=/, "").replace(/;.*$/, "").trim() : undefined,
 		notifyOnSettle: config.notifyOnSettle ?? true,
 		channel: typeof config.channel === "string" ? config.channel : undefined,
