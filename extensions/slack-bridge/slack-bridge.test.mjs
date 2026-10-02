@@ -9,7 +9,7 @@ const jiti = createJiti(new URL("../../test.cjs", import.meta.url).pathname);
 const { toMrkdwn, splitMarkdown, slackToPlain, convertInline } = jiti("./extensions/slack-bridge/mrkdwn.ts");
 const { rebuildState, selectInbound, tsCompare, ENTRY_TYPE, METADATA_EVENT } = jiti("./extensions/slack-bridge/state.ts");
 const { loadConfig, SlackClient, SlackError } = jiti("./extensions/slack-bridge/slack.ts");
-const { SlackBridge } = jiti("./extensions/slack-bridge/bridge.ts");
+const { SlackBridge, threadPermalink } = jiti("./extensions/slack-bridge/bridge.ts");
 
 describe("toMrkdwn", () => {
 	it("converts emphasis, strike and links", () => {
@@ -217,13 +217,13 @@ function harness({ sessionId = "s1", entries = [], editor = "", replies = [] } =
 			calls.push({ method, params });
 			switch (method) {
 				case "auth.test":
-					return { ok: true, user_id: "U1" };
+					return { ok: true, user_id: "U1", url: "https://acme.slack.com/" };
 				case "conversations.open":
 					return { ok: true, channel: { id: "D1" } };
 				case "chat.postMessage":
 					return { ok: true, ts: `${tsSeq++}.000000` };
 				case "chat.getPermalink":
-					return { ok: true, permalink: "https://slack/p1" };
+					throw new SlackError(method, "enterprise_is_restricted");
 				case "conversations.replies":
 					return { ok: true, messages: state.replies.filter((r) => tsCompare(r.ts, params.oldest) > 0) };
 				default:
@@ -271,6 +271,12 @@ function harness({ sessionId = "s1", entries = [], editor = "", replies = [] } =
 	return { bridge, state, calls, flush, advance, posts, records };
 }
 
+describe("threadPermalink", () => {
+	it("builds a message link without chat.getPermalink", () => {
+		assert.equal(threadPermalink("https://acme.enterprise.slack.com/", "D02", "1790964831.328629"), "https://acme.enterprise.slack.com/archives/D02/p1790964831328629");
+	});
+});
+
 describe("SlackBridge", () => {
 	it("opens a thread in the self DM and records the binding", async () => {
 		const h = harness();
@@ -309,7 +315,7 @@ describe("SlackBridge", () => {
 		assert.deepEqual(h.records("post").map((r) => r.role), ["user", "assistant"]);
 
 		const notice = h.calls.find((c) => c.method === "chat.postMessage" && !c.params.thread_ts && /finished/.test(c.params.text));
-		assert.match(notice.params.text, /<https:\/\/slack\/p1\|open thread>/);
+		assert.match(notice.params.text, /<https:\/\/acme\.slack\.com\/archives\/D1\/p200000000\|open thread>/);
 		assert.equal(h.records("notice").length, 1);
 		const header = h.calls.filter((c) => c.method === "chat.update" && c.params.ts === "200.000000").map((c) => c.params.text);
 		assert.match(header.at(-1), /status: \*idle\*/);

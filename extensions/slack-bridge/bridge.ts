@@ -87,6 +87,11 @@ export function messageText(message: { content?: unknown }): string {
 		.join("\n");
 }
 
+/** Link to a message: https://<workspace>.slack.com/archives/<channel>/p<ts without the dot>. */
+export function threadPermalink(workspaceUrl: string, channel: string, ts: string): string {
+	return `${workspaceUrl.replace(/\/+$/, "")}/archives/${channel}/p${ts.replace(".", "")}`;
+}
+
 export type ConfigLoader = () => { api: SlackApi; config: BridgeConfig };
 
 export class SlackBridge {
@@ -501,9 +506,11 @@ export class SlackBridge {
 	private async postNotice(): Promise<void> {
 		const thread = this.thread!;
 		const sessionId = this.host.sessionId();
+		// chat.getPermalink is blocked on some Enterprise Grid workspaces
+		// (enterprise_is_restricted), so build the link from the workspace URL.
 		if (!this.permalink) {
-			const link = await this.api!.call<{ permalink: string }>("chat.getPermalink", { channel: thread.channel, message_ts: thread.threadTs });
-			this.permalink = link.permalink;
+			const auth = await this.api!.call<{ url: string }>("auth.test");
+			this.permalink = threadPermalink(auth.url, thread.channel, thread.threadTs);
 		}
 		for (const ts of this.notices.splice(0)) {
 			try {
